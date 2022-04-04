@@ -65,6 +65,21 @@ class MLP(nn.Module):
         x = self.output(x)
         return x
 
+    def probe_forward(self, x):
+        representations = []
+        with torch.no_grad():
+            x = self.input(x)
+            x = self.dropout(x)
+            x = F.relu(x)
+            for hidden in self.hiddens:
+                h = hidden(x)
+                representations.append(h)
+                x = self.dropout(h)
+                x = F.relu(x)
+            x = self.output(x)
+            representations.append(x)
+        return x, representations  
+
 
 class ResNet(torch.nn.Module):
     """ResNet with the softmax chopped off and the batchnorm frozen"""
@@ -159,6 +174,34 @@ class MNIST_CNN(nn.Module):
         x = self.avgpool(x)
         x = x.view(len(x), -1)
         return x
+
+    def probe_forward(self, x):
+        representations = []
+        with torch.no_grad():
+            x = self.conv1(x)
+            x = F.relu(x)
+            x = self.bn0(x)
+            representations.append(x.view(len(x), -1))
+
+            x = self.conv2(x)
+            x = F.relu(x)
+            x = self.bn1(x)
+            representations.append(x.view(len(x), -1))
+
+            x = self.conv3(x)
+            x = F.relu(x)
+            x = self.bn2(x)
+            representations.append(x.view(len(x), -1))
+
+            x = self.conv4(x)
+            x = F.relu(x)
+            x = self.bn3(x)
+            representations.append(x.view(len(x), -1))
+
+            x = self.avgpool(x)
+            x = x.view(len(x), -1)
+            representations.append(x.view(len(x), -1))
+        return x, representations
 
 
 class ContextNet(nn.Module):
