@@ -52,7 +52,7 @@ class LayerwiseProbeModel(nn.Module):
         
     def update(self, minibatches, unlabeled=None):
         # Train all probes for one step
-        # TODO - what if different probes need different steps for training?
+        # What if different probes need different steps for training? Don't worry; they seem to be quite stable
         # minibatches contain batches from different environments (as labeled by y)
         all_x, all_y = [], []
         for x,y in minibatches:
@@ -188,7 +188,7 @@ def main(probe_args):
     algorithm = algorithm_class(dataset.input_shape, dataset.num_classes, len(dataset) - len(train_args.test_envs), hparams)
     algorithm.load_state_dict(algorithm_dict)
 
-    probe = LayerwiseProbeModel(algorithm, len(dataset) - len(train_args.test_envs))
+    probe = LayerwiseProbeModel(algorithm, len(dataset))
     probe.to(device)
 
     train_loaders = [InfiniteDataLoader(
@@ -198,6 +198,9 @@ def main(probe_args):
         num_workers=dataset.N_WORKERS)
         for i, (env, env_weights) in enumerate(in_splits)
         if i not in train_args.test_envs]
+    train_loader_env_labels = [i for i in range(len(in_splits))
+        if i not in train_args.test_envs]
+
     eval_loaders_insplits = [FastDataLoader(
         dataset=env,
         batch_size=64,
@@ -221,16 +224,17 @@ def main(probe_args):
 
     for step in range(0, n_steps):
         minibatches_device = []
-        for envid, (x,y) in enumerate(next(train_minibatches_iterator)):
+        batches = next(train_minibatches_iterator)
+        for envid, (x,y) in zip(train_loader_env_labels, batches):
             envlabels = envid * torch.ones_like(y)
             minibatches_device.append((x.to(device), envlabels.to(device)))
-        step_vals = probe.update(minibatches_device)
+        probe.update(minibatches_device)
 
         if (step % probe_args.report_freq == 0) or (step == n_steps - 1):
             results = {
                 'step': step,
                 'epoch': step / steps_per_epoch,
-                'time_per_epoch': (time.time() - start_time) / (step / steps_per_epoch)
+                'time_elapsed': time.time() - start_time
             }
             
             probe_train_accs = evaluate_probe_accuracy(probe, 
