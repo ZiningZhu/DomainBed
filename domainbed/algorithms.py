@@ -1383,7 +1383,7 @@ class TRM(Algorithm):
         model.train()
         return h_estimate.detach()
 
-    def update(self, minibatches):
+    def update(self, minibatches, unlabeled=False):
 
         loss_swap = 0.0
         trm = 0.0
