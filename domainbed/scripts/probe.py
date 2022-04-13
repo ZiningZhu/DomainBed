@@ -28,27 +28,34 @@ class LayerwiseProbeModel(nn.Module):
         
         self.probing_classifiers = nn.ModuleList([])
         self.optimizers = []
-        if hasattr(algorithm, "featurizer"):
-            if isinstance(algorithm.featurizer, networks.MLP):
-                for hid in algorithm.featurizer.hiddens:
-                    probing_clf = nn.Linear(hid.out_features, self.num_probe_classes)
-                    self.probing_classifiers.append(probing_clf)
-                    self.optimizers.append(torch.optim.Adam(probing_clf.parameters(), lr=self.probe_init_lr))
-            elif isinstance(algorithm.featurizer, networks.MNIST_CNN):
-                hid_dims = [50176, 25088, 25088, 25088, 128]
-                for i in range(len(hid_dims)):
-                    probing_clf = nn.Linear(hid_dims[i], num_probe_classes)
-                    self.probing_classifiers.append(probing_clf)
-                    self.optimizers.append(torch.optim.Adam(probing_clf.parameters(), lr=self.probe_init_lr))
 
-            elif isinstance(algorithm.featurizer, networks.ResNet):
-                raise NotImplementedError("TODO")
-            elif isinstance(algorithm.featurizer, Wide_ResNet):
-                raise NotImplementedError("TODO")
-            else:
-                raise ValueError("Probing of the featurizer (class {}) of algorithm {} is not supported yet!".format(algorithm.featurizer.__class__, algorithm.__class__))
+        if hasattr(algorithm, "featurizer"):
+            featurizer = algorithm.featurizer 
+        elif hasattr(algorithm, "network_f"):  # algorithm=SagNet
+            featurizer = algorithm.network_f
         else:
             raise ValueError("Algorithm {} does not have a featurizer to probe.".format(algorithm.__class__))
+        self.featurizer = featurizer
+        
+        if isinstance(featurizer, networks.MLP):
+            for hid in featurizer.hiddens:
+                probing_clf = nn.Linear(hid.out_features, self.num_probe_classes)
+                self.probing_classifiers.append(probing_clf)
+                self.optimizers.append(torch.optim.Adam(probing_clf.parameters(), lr=self.probe_init_lr))
+        elif isinstance(featurizer, networks.MNIST_CNN):
+            hid_dims = [50176, 25088, 25088, 25088, 128]
+            for i in range(len(hid_dims)):
+                probing_clf = nn.Linear(hid_dims[i], num_probe_classes)
+                self.probing_classifiers.append(probing_clf)
+                self.optimizers.append(torch.optim.Adam(probing_clf.parameters(), lr=self.probe_init_lr))
+
+        elif isinstance(featurizer, networks.ResNet):
+            raise NotImplementedError("TODO")
+        elif isinstance(featurizer, Wide_ResNet):
+            raise NotImplementedError("TODO")
+        else:
+            raise ValueError("Probing of the featurizer (class {}) is not supported yet!".format(featurizer.__class__))
+    
         
     def update(self, minibatches, unlabeled=None):
         # Train all probes for one step
@@ -61,7 +68,7 @@ class LayerwiseProbeModel(nn.Module):
         all_x = torch.cat(all_x)
         all_y = torch.cat(all_y)
 
-        logits, batch_representations = self.algorithm.featurizer.probe_forward(all_x)
+        logits, batch_representations = self.featurizer.probe_forward(all_x)
         for pid, rep in enumerate(batch_representations):
             loss = F.cross_entropy(self.probing_classifiers[pid](rep), all_y)
             loss.backward()
@@ -69,7 +76,7 @@ class LayerwiseProbeModel(nn.Module):
             self.optimizers[pid].zero_grad()
 
     def predict(self, x):
-        logits, batch_representations = self.algorithm.featurizer.probe_forward(x)
+        logits, batch_representations = self.featurizer.probe_forward(x)
         preds = []
         for pid, rep in enumerate(batch_representations):
             pred = self.probing_classifiers[pid](rep)  # (bsz, dim_out)
