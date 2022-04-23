@@ -447,13 +447,11 @@ class GroupDRO(ERM):
     def __init__(self, input_shape, num_classes, num_domains, hparams):
         super(GroupDRO, self).__init__(input_shape, num_classes, num_domains,
                                         hparams)
-        self.register_buffer("q", torch.Tensor())
+        # self.register_buffer("q", torch.Tensor())
+        self.register_buffer("q", torch.ones(num_domains))
 
     def update(self, minibatches, unlabeled=None):
         device = "cuda" if minibatches[0][0].is_cuda else "cpu"
-
-        if not len(self.q):
-            self.q = torch.ones(len(minibatches)).to(device)
 
         losses = torch.zeros(len(minibatches)).to(device)
 
