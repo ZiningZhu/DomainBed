@@ -91,6 +91,7 @@ class ResNet(torch.nn.Module):
         else:
             self.network = torchvision.models.resnet50(pretrained=True)
             self.n_outputs = 2048
+        self.network.probe_forward = _resnet_probe_forward
 
         # self.network = remove_batch_norm_from_resnet(self.network)
 
@@ -118,6 +119,9 @@ class ResNet(torch.nn.Module):
         """Encode x into a feature vector of size n_outputs."""
         return self.dropout(self.network(x))
 
+    def probe_forward(self, x):
+        return self.network.probe_forward(self.network, x)
+
     def train(self, mode=True):
         """
         Override the default train() to freeze the BN parameters
@@ -129,6 +133,30 @@ class ResNet(torch.nn.Module):
         for m in self.network.modules():
             if isinstance(m, nn.BatchNorm2d):
                 m.eval()
+
+def _resnet_probe_forward(self, x):
+    representations = []
+    with torch.no_grad():
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = self.maxpool(x)
+        representations.append(x.view(len(x), -1))
+
+        x = self.layer1(x)
+        representations.append(x.view(len(x), -1))
+        x = self.layer2(x)
+        representations.append(x.view(len(x), -1))
+        x = self.layer3(x)
+        representations.append(x.view(len(x), -1))
+        x = self.layer4(x)
+        representations.append(x.view(len(x), -1))
+
+        x = self.avgpool(x)
+        x = torch.flatten(x, 1)
+        x = self.fc(x)
+
+    return x, representations
 
 
 class MNIST_CNN(nn.Module):
@@ -231,8 +259,10 @@ def Featurizer(input_shape, hparams):
     elif input_shape[1:3] == (28, 28):
         return MNIST_CNN(input_shape)
     elif input_shape[1:3] == (32, 32):
+        print("networks/Featurizer: using Wide_ResNet")
         return wide_resnet.Wide_ResNet(input_shape, 16, 2, 0.)
     elif input_shape[1:3] == (224, 224):
+        print("networks/Featurizer: using ResNet")
         return ResNet(input_shape, hparams)
     else:
         raise NotImplementedError

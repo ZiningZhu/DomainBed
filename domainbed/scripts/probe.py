@@ -50,7 +50,12 @@ class LayerwiseProbeModel(nn.Module):
                 self.optimizers.append(torch.optim.Adam(probing_clf.parameters(), lr=self.probe_init_lr))
 
         elif isinstance(featurizer, networks.ResNet):
-            raise NotImplementedError("TODO")
+            hid_dims = [64*56*56, 256*56*56, 512*28*28, 1024*14*14, 2048*7*7]
+            for i in range(len(hid_dims)):
+                probing_clf = nn.Linear(hid_dims[i], num_probe_classes)
+                self.probing_classifiers.append(probing_clf) 
+                self.optimizers.append(torch.optim.Adam(probing_clf.parameters(), lr=self.probe_init_lr))
+                
         elif isinstance(featurizer, Wide_ResNet):
             raise NotImplementedError("TODO")
         else:
