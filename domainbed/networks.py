@@ -155,6 +155,7 @@ def _resnet_probe_forward(self, x):
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
         x = self.fc(x)
+        representations.append(x.view(len(x), -1))
 
     return x, representations
 

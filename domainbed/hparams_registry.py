@@ -93,7 +93,7 @@ def _hparams(algorithm, dataset, random_seed):
         _hparam('penalty', 1000, lambda r: 10**r.uniform(1, 5))
 
     elif algorithm == "SANDMask":
-        _hparam('tau', 1.0, lambda r: r.uniform(0.0, 1.))
+        _hparam('tau', 0.4, lambda r: r.uniform(0.0, 1.))
         _hparam('k', 1e+1, lambda r: 10**r.uniform(-3, 5))
 
     elif algorithm == "Fishr":

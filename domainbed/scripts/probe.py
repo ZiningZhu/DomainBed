@@ -4,6 +4,7 @@ import json
 from re import L
 import numpy as np
 import os
+from pathlib import Path
 import random
 import time
 import torch 
@@ -43,14 +44,14 @@ class LayerwiseProbeModel(nn.Module):
                 self.probing_classifiers.append(probing_clf)
                 self.optimizers.append(torch.optim.Adam(probing_clf.parameters(), lr=self.probe_init_lr))
         elif isinstance(featurizer, networks.MNIST_CNN):
-            hid_dims = [50176, 25088, 25088, 25088, 128]
+            hid_dims = [64*28*28, 128*14*14, 128*14*14, 128*14*14, 128]
             for i in range(len(hid_dims)):
                 probing_clf = nn.Linear(hid_dims[i], num_probe_classes)
                 self.probing_classifiers.append(probing_clf)
                 self.optimizers.append(torch.optim.Adam(probing_clf.parameters(), lr=self.probe_init_lr))
 
         elif isinstance(featurizer, networks.ResNet):
-            hid_dims = [64*56*56, 256*56*56, 512*28*28, 1024*14*14, 2048*7*7]
+            hid_dims = [64*56*56, 256*56*56, 512*28*28, 1024*14*14, 2048*7*7, 2048]
             for i in range(len(hid_dims)):
                 probing_clf = nn.Linear(hid_dims[i], num_probe_classes)
                 self.probing_classifiers.append(probing_clf) 
@@ -80,14 +81,21 @@ class LayerwiseProbeModel(nn.Module):
             self.optimizers[pid].step()
             self.optimizers[pid].zero_grad()
 
-    def predict(self, x):
+    def predict(self, x, export_representations=False):
         logits, batch_representations = self.featurizer.probe_forward(x)
         preds = []
         for pid, rep in enumerate(batch_representations):
             pred = self.probing_classifiers[pid](rep)  # (bsz, dim_out)
             maxval, maxid = torch.max(pred, dim=-1)
             preds.append(maxid)
-        return preds 
+        if export_representations:
+            cpu_device = torch.device("cpu")
+            br = [rep.to(cpu_device) for rep in batch_representations]
+            # br is List (len n_probe) of (bsz, dim_out) torch.tensor (on CPU)
+            return preds, br 
+        else:
+            return preds 
+
 
 def evaluate_probe_accuracy(probe, 
                 eval_loader_env_labels, 
@@ -122,6 +130,15 @@ def evaluate_probe_accuracy(probe,
         pid, envid = k
         results[f"probe_{pid}_env_{envid}_{suffix}"] = correct[k] / total[k]
     return results 
+
+def export_representations(probe, minibatches_device, report_dir):
+    # batches is a list-like of (x,y) tensors
+    representations = []
+    for (x, y) in minibatches_device:
+        _, br = probe.predict(x, export_representations=True)
+        representations.append(br)
+    torch.save(representations, 
+        Path(report_dir, "export_representations.pkl"))
 
 
 def main(probe_args):
@@ -231,8 +248,11 @@ def main(probe_args):
     train_minibatches_iterator = zip(*train_loaders)
     
     steps_per_epoch = min([len(env)/hparams['batch_size'] for env,_ in in_splits])
-    n_steps = probe_args.steps or dataset.N_STEPS 
+    n_steps = probe_args.steps or (dataset.N_STEPS * probe_args.epochs)
+    print("dataset.N_STEPS={}".format(dataset.N_STEPS), flush=True)
     start_time = time.time()
+
+    Path(probe_args.report_dir).mkdir(parents=True, exist_ok=True)
 
     for step in range(0, n_steps):
         minibatches_device = []
@@ -241,6 +261,8 @@ def main(probe_args):
             envlabels = envid * torch.ones_like(y)
             minibatches_device.append((x.to(device), envlabels.to(device)))
         probe.update(minibatches_device)
+        #if (step == 0):
+        #    export_representations(probe, minibatches_device, probe_args.report_dir)
 
         if (step % probe_args.report_freq == 0) or (step == n_steps - 1):
             results = {
@@ -264,12 +286,13 @@ def main(probe_args):
             report_path = os.path.join(probe_args.report_dir, 'probe_results_{}.jsonl'.format(probe_args.slurm_id))
             with open(report_path, 'a') as f:
                 f.write(json.dumps(results, sort_keys=True) + "\n")
-    print("Probing done!")
+    print("Probing done in {} seconds!".format(time.time() - start_time))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Probe')
     parser.add_argument('--checkpoint_dir', type=str, default="train_output")
     parser.add_argument('--steps', type=int, default=0, help='If 0, use the total steps necessary to traverse the dataset')
+    parser.add_argument('--epochs', type=int, default=1, help='If step==0, train by traversing the dataset --epoch times.')
     parser.add_argument('--report_freq', type=int, default=100)
     parser.add_argument('--report_dir', type=str, default="", help='If empty, use the same directory of the checkpoint')
     parser.add_argument("--slurm_id", type=str, default=0)
