@@ -14,12 +14,15 @@ import PIL
 import torch
 import torchvision
 import torch.utils.data
+import wandb
 
 from domainbed import datasets
 from domainbed import hparams_registry
 from domainbed import algorithms
 from domainbed.lib import misc
 from domainbed.lib.fast_data_loader import InfiniteDataLoader, FastDataLoader
+from pathlib import Path 
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Domain generalization')
@@ -48,12 +51,18 @@ if __name__ == "__main__":
         help="For domain adaptation, % of test to use unlabeled for training.")
     parser.add_argument('--skip_model_save', action='store_true')
     parser.add_argument('--save_model_every_checkpoint', action='store_true')
+    parser.add_argument('--slurm_id', type=str, default="")
     args = parser.parse_args()
 
-    # If we ever want to implement checkpointing, just persist these values
-    # every once in a while, and then load them from disk here.
-    start_step = 0
-    algorithm_dict = None
+    # Checkpoint to args.output_dir
+    if Path(args.output_dir, "model.pkl").is_file():
+        with open(Path(args.output_dir, "model.pkl"), "rb") as f:
+            checkpoint = torch.load(f)
+        start_step = checkpoint["step"]
+        algorithm_dict = checkpoint["model_dict"]
+    else:
+        start_step = 0
+        algorithm_dict = None
 
     os.makedirs(args.output_dir, exist_ok=True)
     sys.stdout = misc.Tee(os.path.join(args.output_dir, 'out.txt'))
@@ -84,6 +93,10 @@ if __name__ == "__main__":
     for k, v in sorted(hparams.items()):
         print('\t{}: {}'.format(k, v))
 
+    misc.init_or_resume_wandb_run(Path(args.output_dir, "wandb_id_file.txt"), 
+        project_name="layerwise-ood-probe", 
+        config={**vars(args), **hparams})
+    
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -190,7 +203,7 @@ if __name__ == "__main__":
     n_steps = args.steps or dataset.N_STEPS
     checkpoint_freq = args.checkpoint_freq or dataset.CHECKPOINT_FREQ
 
-    def save_checkpoint(filename):
+    def save_checkpoint(filename, step):
         if args.skip_model_save:
             return
         save_dict = {
@@ -199,12 +212,14 @@ if __name__ == "__main__":
             "model_num_classes": dataset.num_classes,
             "model_num_domains": len(dataset) - len(args.test_envs),
             "model_hparams": hparams,
-            "model_dict": algorithm.state_dict()
+            "model_dict": algorithm.state_dict(),
+            "step": step
         }
         torch.save(save_dict, os.path.join(args.output_dir, filename))
 
-
     last_results_keys = None
+    if start_step+1 >= n_steps:
+        raise ValueError("start_step={}, n_steps={}. Did you forget to delete the output_dir of a previous run of the same configuration?".format(start_step, n_steps))
     for step in range(start_step, n_steps):
         step_start_time = time.time()
         minibatches_device = [(x.to(device), y.to(device))
@@ -247,6 +262,7 @@ if __name__ == "__main__":
                 'hparams': hparams,
                 'args': vars(args)
             })
+            wandb.log(results)
 
             epochs_path = os.path.join(args.output_dir, 'results.jsonl')
             with open(epochs_path, 'a') as f:
@@ -257,9 +273,9 @@ if __name__ == "__main__":
             checkpoint_vals = collections.defaultdict(lambda: [])
 
             if args.save_model_every_checkpoint:
-                save_checkpoint(f'model_step{step}.pkl')
+                save_checkpoint(f'model.pkl', step)
 
-    save_checkpoint('model.pkl')
+    save_checkpoint('model.pkl', n_steps)
 
     with open(os.path.join(args.output_dir, 'done'), 'w') as f:
         f.write('done')
