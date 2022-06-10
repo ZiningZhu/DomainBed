@@ -136,26 +136,25 @@ class ResNet(torch.nn.Module):
 
 def _resnet_probe_forward(self, x):
     representations = []
-    with torch.no_grad():
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-        x = self.maxpool(x)
-        representations.append(x.view(len(x), -1))
+    x = self.conv1(x)
+    x = self.bn1(x)
+    x = self.relu(x)
+    x = self.maxpool(x)
+    representations.append(x.view(len(x), -1))
 
-        x = self.layer1(x)
-        representations.append(x.view(len(x), -1))
-        x = self.layer2(x)
-        representations.append(x.view(len(x), -1))
-        x = self.layer3(x)
-        representations.append(x.view(len(x), -1))
-        x = self.layer4(x)
-        representations.append(x.view(len(x), -1))
+    x = self.layer1(x)
+    representations.append(x.view(len(x), -1))
+    x = self.layer2(x)
+    representations.append(x.view(len(x), -1))
+    x = self.layer3(x)
+    representations.append(x.view(len(x), -1))
+    x = self.layer4(x)
+    representations.append(x.view(len(x), -1))
 
-        x = self.avgpool(x)
-        x = torch.flatten(x, 1)
-        x = self.fc(x)
-        representations.append(x.view(len(x), -1))
+    x = self.avgpool(x)
+    x = torch.flatten(x, 1)
+    x = self.fc(x)
+    representations.append(x.view(len(x), -1))
 
     return x, representations
 
@@ -206,30 +205,29 @@ class MNIST_CNN(nn.Module):
 
     def probe_forward(self, x):
         representations = []
-        with torch.no_grad():
-            x = self.conv1(x)
-            x = F.relu(x)
-            x = self.bn0(x)
-            representations.append(x.view(len(x), -1))
+        x = self.conv1(x)
+        x = F.relu(x)
+        x = self.bn0(x)
+        representations.append(x.view(len(x), -1))
 
-            x = self.conv2(x)
-            x = F.relu(x)
-            x = self.bn1(x)
-            representations.append(x.view(len(x), -1))
+        x = self.conv2(x)
+        x = F.relu(x)
+        x = self.bn1(x)
+        representations.append(x.view(len(x), -1))
 
-            x = self.conv3(x)
-            x = F.relu(x)
-            x = self.bn2(x)
-            representations.append(x.view(len(x), -1))
+        x = self.conv3(x)
+        x = F.relu(x)
+        x = self.bn2(x)
+        representations.append(x.view(len(x), -1))
 
-            x = self.conv4(x)
-            x = F.relu(x)
-            x = self.bn3(x)
-            representations.append(x.view(len(x), -1))
+        x = self.conv4(x)
+        x = F.relu(x)
+        x = self.bn3(x)
+        representations.append(x.view(len(x), -1))
 
-            x = self.avgpool(x)
-            x = x.view(len(x), -1)
-            representations.append(x.view(len(x), -1))
+        x = self.avgpool(x)
+        x = x.view(len(x), -1)
+        representations.append(x.view(len(x), -1))
         return x, representations
 
 

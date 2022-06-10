@@ -74,7 +74,8 @@ class LayerwiseProbeModel(nn.Module):
         all_x = torch.cat(all_x)
         all_y = torch.cat(all_y)
 
-        logits, batch_representations = self.featurizer.probe_forward(all_x)
+        with torch.no_grad():
+            logits, batch_representations = self.featurizer.probe_forward(all_x)
         for pid, rep in enumerate(batch_representations):
             loss = F.cross_entropy(self.probing_classifiers[pid](rep), all_y)
             loss.backward()
@@ -82,7 +83,8 @@ class LayerwiseProbeModel(nn.Module):
             self.optimizers[pid].zero_grad()
 
     def predict(self, x, export_representations=False):
-        logits, batch_representations = self.featurizer.probe_forward(x)
+        with torch.no_grad():
+            logits, batch_representations = self.featurizer.probe_forward(x)
         preds = []
         for pid, rep in enumerate(batch_representations):
             pred = self.probing_classifiers[pid](rep)  # (bsz, dim_out)

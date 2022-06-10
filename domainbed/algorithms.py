@@ -7,6 +7,7 @@ import torch.autograd as autograd
 from torch.autograd import Variable
 
 import copy
+import itertools
 import numpy as np
 from collections import defaultdict, OrderedDict
 try:
@@ -48,6 +49,7 @@ ALGORITHMS = [
     'IB_IRM',
     'CAD',
     'CondCAD',
+    'Layerwise'
 ]
 
 def get_algorithm_class(algorithm_name):
@@ -1785,3 +1787,71 @@ class CondCAD(AbstractCAD):
     """
     def __init__(self, input_shape, num_classes, num_domains, hparams):
         super(CondCAD, self).__init__(input_shape, num_classes, num_domains, hparams, is_conditional=True)
+
+
+class Layerwise(ERM):
+    def __init__(self, input_shape, num_classes, num_domains, hparams):
+        super(Layerwise, self).__init__(input_shape, num_classes, num_domains, hparams)
+        self.featurizer = networks.Featurizer(input_shape, self.hparams)
+        self.classifier = networks.Classifier(
+            self.featurizer.n_outputs,
+            num_classes,
+            self.hparams['nonlinear_classifier'])
+        
+        self.network = nn.Sequential(self.featurizer, self.classifier)
+        
+        self.probing_classifiers = nn.ModuleList()
+        if isinstance(self.featurizer, networks.MNIST_CNN):
+            hid_dims = [64*28*28, 128*14*14, 128*14*14, 128*14*14, 128]
+        elif isinstance(self.featurizer, networks.ResNet):
+            hid_dims = [64*56*56, 256*56*56, 512*28*28, 1024*14*14, 2048*7*7, 2048]
+        else:
+            raise NotImplementedError("featurizer {} not supported.".format(self.featurizer.__class__))
+        for i in range(len(hid_dims)):
+            probing_clf = nn.Linear(hid_dims[i], num_domains)
+            self.probing_classifiers.append(probing_clf)
+
+        if hparams["lambda_scheme"] == "uniform":
+            self.lambda_values = [hparams["lambda_max"]] * len(self.probing_classifiers)
+        elif hparams["lambda_scheme"] == "triangle":
+            m = len(self.probing_classifiers)
+            if m % 2 == 0:
+                lv1 = torch.linspace(0, hparams["lambda_max"], m//2)
+                lv2 = torch.linspace(hparams["lambda_max"], 0, m//2)
+            else:
+                lv1 = torch.linspace(0, hparams["lambda_max"], (m+1)//2)
+                lv2 = torch.linspace(hparams["lambda_max"], 0, (m+1)//2)[1:]
+            self.lambda_values = torch.cat([lv1, lv2])
+        elif hparams["lambda_scheme"] == "learnable":
+            self.lambda_values = nn.Parameter(torch.ones(len(self.probing_classifiers)) * hparams["lambda_max"]) 
+        else:
+            raise NotImplementedError("lambda_scheme {} not supported".format(hparams["lambda_scheme"]))
+
+        self.optimizer = torch.optim.Adam(
+            self.parameters(),
+            lr=self.hparams["lr"],
+            weight_decay=self.hparams['weight_decay']
+        )
+    
+    def update(self, minibatches, unlabeled=None):
+        device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        all_x = torch.cat([x for x,y in minibatches])
+        all_y = torch.cat([y for x,y in minibatches])
+        bsz = len(minibatches[0][0])
+        all_env_labels = torch.tensor([[eid]*bsz for eid in range(len(minibatches))]).view(-1).to(device)
+
+        features, representations = self.featurizer.probe_forward(all_x)
+        pred = self.classifier(features)
+        loss = F.cross_entropy(pred, all_y)
+        for pid, rep in enumerate(representations):
+            probing_pred = self.probing_classifiers[pid](rep)
+            loss += F.cross_entropy(probing_pred, all_env_labels) * self.lambda_values[pid]
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
+        return {'loss': loss.item()}
+
+    def predict(self, x):
+        return self.network(x)

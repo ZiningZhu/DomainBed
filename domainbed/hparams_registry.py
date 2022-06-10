@@ -126,6 +126,10 @@ def _hparams(algorithm, dataset, random_seed):
         _hparam('is_project', False, lambda r: False)
         _hparam('is_flipped', True, lambda r: True)
 
+    elif algorithm == "Layerwise":
+        _hparam('lambda_max', 0.1, lambda r: [0.01, 0.03, 0.1, 0.3])
+        _hparam('lambda_scheme', 'triangle', lambda r: r.choice(['uniform', 'triangle', 'learnable']))
+
     # Dataset-and-algorithm-specific hparam definitions. Each block of code
     # below corresponds to exactly one hparam. Avoid nested conditionals.
 
