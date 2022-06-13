@@ -1845,7 +1845,7 @@ class Layerwise(ERM):
         loss = F.cross_entropy(pred, all_y)
         for pid, rep in enumerate(representations):
             probing_pred = self.probing_classifiers[pid](rep)
-            loss += F.cross_entropy(probing_pred, all_env_labels) * self.lambda_values[pid]
+            loss -= F.cross_entropy(probing_pred, all_env_labels) * self.lambda_values[pid]
 
         self.optimizer.zero_grad()
         loss.backward()
